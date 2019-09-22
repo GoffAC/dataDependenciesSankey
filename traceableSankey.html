@@ -1,0 +1,272 @@
+<!-- Styles -->
+<style>
+  body {
+    font-family: Helvetica, Arial, sans-serif, "Apple Color Emoji",
+      "Segoe UI Emoji", "Segoe UI Symbol";
+  }
+  #chartdiv {
+    width: 100%;
+    height: 90%;
+    padding: 20 auto;
+  }
+
+  .amcharts-highlightMe > g > g {
+    fill-opacity: 1;
+  }
+</style>
+
+<!-- Resources -->
+<script src="https://www.amcharts.com/lib/4/core.js"></script>
+<script src="https://www.amcharts.com/lib/4/charts.js"></script>
+<script src="https://www.amcharts.com/lib/4/themes/animated.js"></script>
+
+<!-- Chart code -->
+<script>
+  //<---------Labelling and highlighting code--------------->
+  getMatchers = matchers => {
+    const originalMatchers = [...matchers];
+    console.log(input);
+
+    // filter input to get all the children of the targets
+    const children = input.filter(connection =>
+      matchers.includes(connection.to)
+    );
+    children.forEach(child => {
+      if (!matchers.includes(child.from)) {
+        matchers.push(child.from);
+      }
+    });
+
+    if (originalMatchers.length === matchers.length) {
+      return children;
+    } else {
+      return getMatchers(matchers);
+    }
+  };
+
+  stripIds = (input, target) => {
+    input.map(row => {
+      delete row.id;
+    });
+    return input;
+  };
+
+  addIdHighlight = (input, target) => {
+    input.map(row => {
+      target.map(t => {
+        if (t.from === row.from && t.to === row.to) {
+          row.id = "highlightMe";
+        }
+      });
+    });
+    return input;
+  };
+
+  function dataReload(target, input) {
+    const x = [target.from];
+    const dataToHightlight = getMatchers(x);
+    const strippedInput = stripIds(input, dataToHightlight);
+    const output = addIdHighlight(input, dataToHightlight);
+    return output;
+  }
+
+  function dataDehighlight(target, input) {
+    const x = [target.from];
+    const dataToHightlight = getMatchers(x);
+    const strippedInput = stripIds(input, dataToHightlight);
+    document.getElementById("chartdiv").style.display = "none";
+    document.getElementById("chartdiv").style.display = "block";
+    return strippedInput;
+  }
+
+  //<------Data Munging work------------------>
+
+  function getDataStructure(input) {
+    //get the deduplicated list (ie. no double values in a list)
+    const uniqueFrom = [...new Set(input.map(a => a.from))];
+    const uniqueTo = [...new Set(input.map(a => a.to))];
+    const unique = [...new Set([...uniqueFrom, ...uniqueTo])];
+
+    // console.log(uniqueFrom)
+    // console.log(uniqueTo)
+    // console.log(unique)
+
+    //Task one  - get the unique lists totals (ie. the number of times)
+    //Stage one - look at all the froms and count the ones going
+    let fromRegister = {};
+    for (const key of unique) {
+      fromRegister[key] = 0;
+    }
+
+    input.map(obj => {
+      for (i = 0; i < unique.length; i++) {
+        if (unique[i] === obj.to) {
+          fromRegister[obj.to]++;
+        }
+      }
+    });
+
+    //Stage two - look at all the tos and count them
+    let toRegister = {};
+    for (const key of unique) {
+      toRegister[key] = 0;
+    }
+
+    input.map(obj => {
+      for (i = 0; i < unique.length; i++) {
+        if (unique[i] === obj.from) {
+          toRegister[obj.from]++;
+        }
+      }
+    });
+
+    //Task Two - the algo
+    //Stage one - for each item that doesn't appear in the TO column gets the value of 1
+
+    const groundMetrics = unique.filter(val => !uniqueTo.includes(val));
+
+    input.map(row => {
+      if (groundMetrics.includes(row.from)) {
+        row.value = 1;
+      }
+    });
+
+    //Stage two - for each non-ground metric, find the value going into it and store that
+
+    input.map(row => {
+      let valueIntoNode = row.value || 0;
+      //get just the records that are not groundMetrics and hence appear in the TO column
+      if (uniqueTo.includes(row.from)) {
+        //filter the rows that are specific to the row we are looking at
+        const incomingFilteredRows = input.filter(row2 => row2.to === row.from); // for a node X, [{from: A, to: X, value: 1}, {from: B, to: X, value: 1}]
+        incomingFilteredRows.forEach(obj => {
+          valueIntoNode += obj.value;
+        });
+
+        const outGoingFilteredRows = input.filter(
+          row2 => row2.from === row.from
+        );
+        let valueOutOfNode = row.value || outGoingFilteredRows.length || 1;
+        // console.log(valueIntoNode)
+        // console.log(valueOutOfNode)
+        // row.value = valueOutOfNode / valueIntoNode || Math.max(valueIntoNode, valueOutOfNode);
+        row.value = valueIntoNode / valueOutOfNode;
+      }
+    });
+
+    //Stage three - add extra fields
+    input.map(row => {
+      row.linkColor = "#551a8b";
+      row.nodeColor = "#06D6A0";
+    });
+    
+    return input
+  }
+
+  //<------Input Declatation------------------>
+  
+  let raw = [
+    {
+      from: "A",
+      to: "E"
+    },
+    {
+      from: "B",
+      to: "E"
+    },
+    {
+      from: "B",
+      to: "F"
+    },
+    {
+      from: "C",
+      to: "F"
+    },
+    {
+      from: "F",
+      to: "P"
+    },
+    {
+      from: "D",
+      to: "E"
+    },
+    {
+      from: "E",
+      to: "I"
+    },
+    {
+      from: "P",
+      to: "J"
+    },
+    {
+      from: "I",
+      to: "J"
+    },
+    {
+      from: "J",
+      to: "Q"
+    },
+    { from: "F", to: "Q" }
+  ];
+
+  let input = getDataStructure(raw);
+
+  let target = { from: "", to: "" };
+
+  //<------AmCharts Code------------------>
+
+  am4core.ready(function() {
+    var chart = am4core.create("chartdiv", am4charts.SankeyDiagram);
+    chart.hiddenState.properties.opacity = 0; // this creates initial fade-in
+
+    chart.data = dataReload(target, input);
+    chart.dataFields.fromName = "from";
+    chart.dataFields.toName = "to";
+    chart.dataFields.value = "value";
+
+    //use defined colour
+    chart.dataFields.color = "nodeColor";
+    chart.links.template.propertyFields.fill = "linkColor";
+
+    //highlight on hover
+    let hoverState = chart.links.template.states.create("hover");
+    hoverState.properties.fillOpacity = 0.6;
+
+    //
+    chart.links.template.propertyFields.id = "id";
+    chart.links.template.fillOpacity = 0.2;
+
+    // for right-most label to fit
+    chart.paddingRight = 30;
+
+    // make nodes draggable
+    var nodeTemplate = chart.nodes.template;
+    nodeTemplate.inert = true;
+    nodeTemplate.readerTitle = "Drag me!";
+    nodeTemplate.showSystemTooltip = true;
+    nodeTemplate.width = 20;
+    nodeTemplate.clickable = false;
+
+    //Css class names set to true
+    am4core.options.autoSetClassName = true;
+
+    // Add events on links
+    chart.links.template.cursorOverStyle = am4core.MouseCursorStyle.pointer;
+    chart.links.template.tooltipText = "{from} to {to}";
+    //on click highlight below
+    chart.links.template.events.on("hit", function(ev) {
+      chart.colors.reset();
+      var linkData = ev.target.dataItem.dataContext;
+      if (linkData === target) {
+        target = "";
+        chart.data = dataDehighlight(target, input);
+      } else {
+        target = linkData;
+        chart.data = dataReload(target, input);
+      }
+    });
+  });
+</script>
+
+<!-- HTML -->
+<div id="chartdiv"></div>
